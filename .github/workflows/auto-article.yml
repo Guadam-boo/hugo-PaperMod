@@ -1,1 +1,88 @@
+name: Automatic Blog Article
 
+on:
+  schedule:
+    - cron: "0 7 * * *" # Publie tous les jours à 07:00
+  workflow_dispatch: # Permet de déclencher manuellement
+
+jobs:
+  generate-article:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install openai python-frontmatter markdownify
+
+      - name: Generate article with ChatGPT
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python3 <<EOF
+          import openai, frontmatter, datetime, random, markdownify
+
+          openai.api_key = "${{ secrets.OPENAI_API_KEY }}"
+
+          # Liste de sujets possibles (modifiable)
+          subjects = [
+              "Les habitudes qui transforment la productivité",
+              "Comment vaincre la procrastination scientifiquement",
+              "Techniques modernes pour rester discipliné",
+              "Psychologie de la motivation",
+              "Comment booster sa confiance avec des méthodes validées",
+              "Routine matinale optimale selon les études",
+              "Comment changer sa vie en 30 jours",
+          ]
+
+          subject = random.choice(subjects)
+
+          prompt = f"""
+          Écris un article de blog SEO complet, structuré en Markdown, sur ce sujet :
+          '{subject}'.
+
+          Contraintes :
+          - minimum 800 mots
+          - titre principal H1
+          - H2 et H3 pour structurer
+          - ton professionnel, clair, motivant
+          - ajoute une introduction captivante
+          - ajoute une conclusion
+          - pas de phrases trop longues
+          """
+
+          response = openai.chat.completions.create(
+              model="gpt-4o-mini",
+              messages=[{"role": "user", "content": prompt}]
+          )
+
+          article = response.choices[0].message['content']
+
+          # Génération du fichier Markdown
+          today = datetime.datetime.now().strftime("%Y-%m-%d")
+          filename = f"content/posts/{today}-article.md"
+
+          post = frontmatter.Post(article)
+          post["title"] = subject
+          post["date"] = today
+
+          with open(filename, "w") as f:
+              f.write(frontmatter.dumps(post))
+
+          print("Article created:", filename)
+          EOF
+
+      - name: Commit and push article
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add content/posts
+          git commit -m "New automated article"
+          git push
